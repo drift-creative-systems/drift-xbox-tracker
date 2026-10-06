@@ -3,10 +3,13 @@
  * All reads/writes are wrapped — storage can be missing, full or blocked.
  */
 
+import { isDataImage } from './match.js';
+
 const KEYS = {
 	games: 'dxt_games',
 	settings: 'dxt_settings',
 	profile: 'dxt_profile',
+	avatar: 'dxt_avatar',
 	lastSync: 'dxt_last_sync',
 	lastError: 'dxt_last_error',
 };
@@ -123,6 +126,19 @@ export function saveProfile(profile) {
 	write(KEYS.profile, profile);
 }
 
+/**
+ * Uploaded avatar (a resized data URL). Kept apart from the profile so a
+ * sync never replaces it.
+ */
+export function getAvatar() {
+	const avatar = read(KEYS.avatar, null);
+	return isDataImage(avatar) ? avatar : null;
+}
+
+export function saveAvatar(dataUrl) {
+	write(KEYS.avatar, isDataImage(dataUrl) ? dataUrl : null);
+}
+
 export function getLastSync() {
 	return read(KEYS.lastSync, null);
 }
@@ -152,6 +168,7 @@ export function exportBackup() {
 		exported: new Date().toISOString(),
 		settings,
 		profile: getProfile(),
+		avatar: getAvatar(),
 		lastSync: getLastSync(),
 		games: getGames(),
 	};
@@ -169,6 +186,10 @@ export function restoreBackup(data) {
 		saveSettings(settings);
 	}
 	saveProfile(data.profile || null);
+	// Older backups have no avatar key — leave the current one alone.
+	if ('avatar' in data) {
+		saveAvatar(data.avatar);
+	}
 	setLastSync(data.lastSync || null);
 	return games.length;
 }

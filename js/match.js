@@ -75,6 +75,29 @@ export function safeUrl(url) {
 }
 
 /**
+ * safeUrl for images: http is upgraded to https so older synced data
+ * doesn't trigger mixed-content warnings.
+ */
+export function httpsImage(url) {
+	return safeUrl(url).replace(/^http:\/\//i, 'https://');
+}
+
+// Raster base64 only — no SVG (can carry script) and no other data types.
+const DATA_IMAGE = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+
+/**
+ * Image src guard that also allows the uploaded avatar's data URL.
+ */
+export function safeImageSrc(src) {
+	const s = String(src || '');
+	return DATA_IMAGE.test(s) ? s : httpsImage(s);
+}
+
+export function isDataImage(src) {
+	return DATA_IMAGE.test(String(src || ''));
+}
+
+/**
  * Find the stored game for an Xbox title: title ID, then normalised name,
  * then the slug inside a saved TA URL (catches "Bladerunner" vs
  * "Blade Runner: Enhanced Edition"). Mirrors the original plugin's order.

@@ -8,6 +8,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). This pr
 
 ## [Unreleased]
 
+### Added
+- [index.html] [js/app.js] Avatar upload in Settings → Profile. The image is centre-cropped and resized in the browser to 256×256 WebP (JPEG fallback), and replaces the Xbox gamerpic in the hero. There's also a Remove button
+- [js/store.js] `dxt_avatar` storage key, included in backup export/restore (older backups without it leave the current avatar alone)
+- [js/match.js] `safeImageSrc()`, which allows raster base64 data URLs (PNG/JPEG/WebP only, no SVG) alongside https images
+
+### Fixed
+- [worker/src/index.js] [js/match.js] Microsoft image URLs returned as `http://` by OpenXBL are upgraded to `https://`, which removes the mixed-content warnings for game covers and the gamerpic
+
 ## [1.0.0] - 2026-10-06
 
 First release of **Drift: Xbox Tracker**, a standalone Drift ecosystem app replacing the Bonsai Xbox Tracker WordPress plugin.

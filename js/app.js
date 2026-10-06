@@ -8,13 +8,16 @@ import * as store from './store.js';
 import * as sync from './sync.js';
 import * as api from './api.js';
 import { importCsv } from './importer.js';
-import { taSearchUrl, withGamerId, safeUrl } from './match.js';
+import { taSearchUrl, withGamerId, safeUrl, httpsImage, safeImageSrc } from './match.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const AUTO_SYNC_CHECK_MS = 15 * 60 * 1000;
+const AVATAR_SIZE = 256;
+const AVATAR_MAX_BYTES = 20 * 1024 * 1024;
+const AVATAR_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
 const state = { filter: 'all', q: '', sort: 'played', openId: null };
 
@@ -29,6 +32,8 @@ const el = {
 	syncLabel: $('[data-sync-label]'),
 	settings: $('[data-settings]'),
 	settingsForm: $('[data-settings-form]'),
+	avatarPreview: $('[data-avatar-preview]'),
+	avatarRemove: $('[data-action="remove-avatar"]'),
 	toasts: $('[data-toasts]'),
 };
 
@@ -61,7 +66,7 @@ function linkify(text) {
  * Xbox image URLs accept w/h params — ask for a small square.
  */
 function coverUrl(image) {
-	const url = safeUrl(image);
+	const url = httpsImage(image);
 	if (!url) {
 		return '';
 	}
@@ -105,6 +110,42 @@ function readFile(file) {
 	});
 }
 
+/**
+ * Centre-crops an image file to a square and shrinks it to AVATAR_SIZE,
+ * so a phone photo becomes a ~20 KB data URL rather than filling storage.
+ */
+function resizeAvatar(file) {
+	return new Promise((resolve, reject) => {
+		const src = URL.createObjectURL(file);
+		const img = new Image();
+		img.onload = () => {
+			URL.revokeObjectURL(src);
+			const side = Math.min(img.naturalWidth, img.naturalHeight);
+			if (!side) {
+				reject(new Error('That image appears to be empty.'));
+				return;
+			}
+			const canvas = document.createElement('canvas');
+			canvas.width = AVATAR_SIZE;
+			canvas.height = AVATAR_SIZE;
+			const ctx = canvas.getContext('2d');
+			// Matches --bg, so transparent PNGs don't turn black as JPEG.
+			ctx.fillStyle = '#0b0c0e';
+			ctx.fillRect(0, 0, AVATAR_SIZE, AVATAR_SIZE);
+			ctx.imageSmoothingQuality = 'high';
+			ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, AVATAR_SIZE, AVATAR_SIZE);
+			// Browsers without WebP encoding silently return PNG — use JPEG then.
+			const webp = canvas.toDataURL('image/webp', 0.85);
+			resolve(webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/jpeg', 0.85));
+		};
+		img.onerror = () => {
+			URL.revokeObjectURL(src);
+			reject(new Error('Could not read that image. Try a PNG, JPEG or WebP.'));
+		};
+		img.src = src;
+	});
+}
+
 const isConfigured = () => {
 	const s = store.getSettings();
 	return Boolean(s.workerUrl && s.accessToken);
@@ -142,7 +183,8 @@ function renderHero() {
 	const started = games.filter((g) => g.progress > 0);
 	const avg = started.length ? Math.round(started.reduce((n, g) => n + g.progress, 0) / started.length) : 0;
 	const gamerscore = profile.gamerscore || games.reduce((n, g) => n + g.gsCurrent, 0);
-	const avatar = safeUrl(profile.avatar);
+	// Uploaded avatar wins over the Xbox gamerpic.
+	const avatar = safeImageSrc(store.getAvatar() || profile.avatar);
 
 	el.hero.innerHTML = `
 		<div class="hero__id">
@@ -430,7 +472,55 @@ function openSettings() {
 	f.taGamerId.value = s.taGamerId;
 	f.taBatch.value = s.taBatch;
 	f.skipApps.checked = Boolean(s.skipApps);
+	renderAvatarPreview();
 	el.settings.showModal();
+}
+
+function renderAvatarPreview() {
+	const avatar = safeImageSrc(store.getAvatar());
+	el.avatarPreview.hidden = !avatar;
+	el.avatarRemove.hidden = !avatar;
+	if (avatar) {
+		el.avatarPreview.src = avatar;
+	} else {
+		el.avatarPreview.removeAttribute('src');
+	}
+}
+
+async function handleAvatar(input) {
+	const file = input.files?.[0];
+	input.value = '';
+	if (!file) {
+		return;
+	}
+	if (!AVATAR_TYPES.includes(file.type)) {
+		toast('Choose a PNG, JPEG or WebP image.', 'error');
+		return;
+	}
+	if (file.size > AVATAR_MAX_BYTES) {
+		toast('That image is over 20 MB. Choose a smaller one.', 'error');
+		return;
+	}
+	try {
+		store.saveAvatar(await resizeAvatar(file));
+		renderAvatarPreview();
+		renderHero();
+		toast('Avatar updated.', 'success');
+	} catch (err) {
+		toast(err.message, 'error');
+	}
+}
+
+function removeAvatar() {
+	try {
+		store.saveAvatar(null);
+	} catch (err) {
+		toast(err.message, 'error');
+		return;
+	}
+	renderAvatarPreview();
+	renderHero();
+	toast('Avatar removed. Using your Xbox gamerpic.', 'info');
 }
 
 function readSettingsForm() {
@@ -499,6 +589,7 @@ async function handleRestore(input) {
 		}
 		const n = store.restoreBackup(data);
 		renderAll();
+		renderAvatarPreview();
 		toast(`Restored ${n} games.`, 'success');
 	} catch (err) {
 		toast(err instanceof SyntaxError ? 'That file is not valid JSON.' : err.message, 'error');
@@ -551,6 +642,9 @@ function bind() {
 				break;
 			case 'wipe':
 				handleWipe();
+				break;
+			case 'remove-avatar':
+				removeAvatar();
 				break;
 			case 'edit':
 				if (row) {
@@ -611,6 +705,7 @@ function bind() {
 
 	$('[data-import-csv]').addEventListener('change', (e) => handleCsv(e.target));
 	$('[data-restore]').addEventListener('change', (e) => handleRestore(e.target));
+	$('[data-avatar-upload]').addEventListener('change', (e) => handleAvatar(e.target));
 
 	document.addEventListener('visibilitychange', maybeAutoSync);
 }

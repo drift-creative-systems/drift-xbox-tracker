@@ -163,7 +163,7 @@ async function titles(env) {
 		return {
 			titleId: String(t.titleId ?? ''),
 			name: String(t.name ?? ''),
-			image: String(t.displayImage ?? ''),
+			image: httpsImage(t.displayImage),
 			platform: (Array.isArray(t.devices) ? t.devices : []).map((d) => DEVICE_LABELS[d] || d).join(', '),
 			gsCurrent: toInt(ach.currentGamerscore),
 			gsTotal: toInt(ach.totalGamerscore),
@@ -186,7 +186,7 @@ async function profile(env) {
 	return {
 		gamertag: map.Gamertag || '',
 		gamerscore: toInt(map.Gamerscore),
-		avatar: map.GameDisplayPicRaw || '',
+		avatar: httpsImage(map.GameDisplayPicRaw),
 	};
 }
 
@@ -228,4 +228,12 @@ async function checkWalkthrough(slug) {
 function toInt(v) {
 	const n = parseInt(v, 10);
 	return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
+ * OpenXBL returns some Microsoft image URLs as http://. The hosts serve
+ * https too, so upgrade them here and avoid mixed-content warnings.
+ */
+function httpsImage(v) {
+	return String(v ?? '').replace(/^http:\/\//i, 'https://');
 }

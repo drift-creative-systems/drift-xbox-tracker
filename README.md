@@ -41,14 +41,7 @@ The app can't call OpenXBL or TrueAchievements directly. Browsers block those cr
 
 Sign in at [xbl.io](https://xbl.io) with your Xbox account and copy your personal API key. The free tier is plenty, because one sync uses two calls.
 
-### 2. Deploy the Worker
-
-```bash
-cd worker
-npm install
-npx wrangler login
-npx wrangler secret put OPENXBL_KEY      # paste the xbl.io key
-npx wrangler secret put ACCESS_TOKEN     # any long random string; you'll paste it into the app
+# any long random string; you'll paste it into the app
 ```
 
 Edit `ALLOWED_ORIGINS` in `worker/wrangler.toml` to include the URL you'll host the app on (comma separated), then run:

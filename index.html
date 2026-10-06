@@ -108,6 +108,21 @@
 			</fieldset>
 
 			<fieldset class="panel">
+				<legend>Profile</legend>
+				<div class="field">
+					<span class="field__label">Avatar</span>
+					<span class="field__hint">Optional. Replaces your Xbox gamerpic in this browser. Saved as soon as you choose it, cropped to a square.</span>
+					<div class="avatar-field">
+						<img class="avatar-field__preview" alt="Current avatar" width="56" height="56" data-avatar-preview hidden>
+						<div class="panel__actions">
+							<label class="btn btn--ghost btn--sm btn--file">Choose image<input type="file" accept="image/png,image/jpeg,image/webp" data-avatar-upload></label>
+							<button type="button" class="btn btn--ghost btn--sm" data-action="remove-avatar" hidden>Remove</button>
+						</div>
+					</div>
+				</div>
+			</fieldset>
+
+			<fieldset class="panel">
 				<legend>TrueAchievements</legend>
 				<label class="field">
 					<span class="field__label">TrueAchievements gamer ID</span>

@@ -893,6 +893,27 @@ code {
 	gap: 0.5rem;
 }
 
+.avatar-field {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.75rem;
+}
+
+/* .btn sets its own display, which would beat the hidden attribute. */
+.avatar-field [hidden] {
+	display: none;
+}
+
+.avatar-field__preview {
+	width: 56px;
+	height: 56px;
+	flex: none;
+	border-radius: 50%;
+	box-shadow: 0 0 0 2px var(--surface-2), 0 0 0 4px var(--accent);
+	object-fit: cover;
+}
+
 /* ---------- Toasts ---------- */
 
 .toasts {
