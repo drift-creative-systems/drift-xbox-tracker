@@ -1,0 +1,12 @@
+name = "drift-xbox-tracker-proxy"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# Comma-separated list of origins allowed to call the proxy.
+# Add your deployed app URL here, e.g. "https://xbox.example.com,http://localhost:8080"
+[vars]
+ALLOWED_ORIGINS = "https://xbox.driftcreativesystems.co.uk,http://localhost:8080"
+
+# Secrets — never put these in this file:
+#   npx wrangler secret put OPENXBL_KEY
+#   npx wrangler secret put ACCESS_TOKEN

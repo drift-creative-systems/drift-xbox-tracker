@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="color-scheme" content="dark">
+	<meta name="theme-color" content="#0b0c0e">
+	<title>Drift: Xbox Tracker</title>
+	<meta name="description" content="Every game on your Xbox account with gamerscore, achievement progress and TrueAchievements walkthroughs. Part of the Drift ecosystem.">
+	<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+	<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@500;600;700&display=swap">
+	<link rel="stylesheet" href="css/styles.css">
+	<script type="module" src="js/app.js"></script>
+</head>
+<body>
+	<a class="skip-link" href="#library">Skip to games</a>
+
+	<header class="topbar">
+		<a class="brand" href="./">
+			<svg class="brand__mark" viewBox="0 0 128 128" aria-hidden="true" focusable="false">
+				<path d="M28 22H62C80 22 98 40 98 58C98 76 80 94 62 94H28L46 76H62C72 76 80 68 80 58C80 48 72 40 62 40H28V22Z"/>
+				<path d="M30 82L52 60H80L58 82H30Z"/>
+			</svg>
+			<span class="brand__name"><span class="brand__drift">Drift</span><span class="brand__colon">:</span> Xbox Tracker</span>
+		</a>
+		<div class="topbar__actions">
+			<button type="button" class="btn btn--primary" data-action="sync">
+				<svg class="icon icon--sync" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2M18.5 3v3h-3M5.5 21v-3h3"/></svg>
+				<span data-sync-label>Sync now</span>
+			</button>
+			<button type="button" class="btn btn--ghost btn--icon" data-action="settings" aria-label="Settings">
+				<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+			</button>
+		</div>
+	</header>
+
+	<main class="app">
+		<section class="hero" data-hero aria-label="Profile summary"></section>
+
+		<section class="library" id="library" tabindex="-1" aria-labelledby="library-title">
+			<h2 id="library-title" class="visually-hidden">Games</h2>
+
+			<div class="controls">
+				<label class="search">
+					<span class="visually-hidden">Search games</span>
+					<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+					<input type="search" placeholder="Search games" autocomplete="off" data-search>
+				</label>
+				<label class="sort">
+					<span>Sort</span>
+					<select data-sort>
+						<option value="played">Last played</option>
+						<option value="name">Name</option>
+						<option value="progress">Completion</option>
+						<option value="remaining">Gamerscore left</option>
+					</select>
+				</label>
+				<div class="filters" role="group" aria-label="Filter games">
+					<button type="button" class="chip" data-filter="all" aria-pressed="true">All</button>
+					<button type="button" class="chip" data-filter="recent" aria-pressed="false">Played this month</button>
+					<button type="button" class="chip" data-filter="progress" aria-pressed="false">In progress</button>
+					<button type="button" class="chip" data-filter="todo" aria-pressed="false">Not started</button>
+					<button type="button" class="chip" data-filter="done" aria-pressed="false">Completed</button>
+					<button type="button" class="chip" data-filter="walkthrough" aria-pressed="false">Has walkthrough</button>
+					<button type="button" class="chip" data-filter="list" aria-pressed="false">On my list</button>
+					<button type="button" class="chip" data-filter="hidden" aria-pressed="false">Hidden</button>
+				</div>
+			</div>
+
+			<p class="count" aria-live="polite"><span data-count>0</span> games</p>
+
+			<ol class="games" data-list></ol>
+			<div class="empty" data-empty hidden></div>
+		</section>
+	</main>
+
+	<footer class="footer">
+		<p><strong>Drift</strong> · Creative Systems. Your library is stored in this browser only.</p>
+	</footer>
+
+	<dialog class="dialog" data-settings aria-labelledby="settings-title">
+		<form class="dialog__body" data-settings-form novalidate>
+			<header class="dialog__head">
+				<h2 id="settings-title">Settings</h2>
+				<button type="button" class="btn btn--ghost btn--icon" data-action="close-settings" aria-label="Close settings">
+					<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6 6 18"/></svg>
+				</button>
+			</header>
+
+			<fieldset class="panel">
+				<legend>Connection</legend>
+				<label class="field">
+					<span class="field__label">Worker URL</span>
+					<input type="url" name="workerUrl" placeholder="https://drift-xbox-tracker-proxy.you.workers.dev" autocomplete="off" inputmode="url">
+					<span class="field__hint">The Cloudflare Worker in <code>worker/</code>. It holds your OpenXBL key so it never touches the browser.</span>
+				</label>
+				<label class="field">
+					<span class="field__label">Access token</span>
+					<input type="password" name="accessToken" autocomplete="off">
+					<span class="field__hint">The <code>ACCESS_TOKEN</code> secret you set on the Worker. Stored in this browser only.</span>
+				</label>
+				<div class="panel__actions">
+					<button type="button" class="btn btn--ghost btn--sm" data-action="test">Save &amp; test connection</button>
+				</div>
+			</fieldset>
+
+			<fieldset class="panel">
+				<legend>TrueAchievements</legend>
+				<label class="field">
+					<span class="field__label">TrueAchievements gamer ID</span>
+					<input type="text" name="taGamerId" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+					<span class="field__hint">Optional. Adds <code>?gamerid=</code> to achievement links so TA shows your progress.</span>
+				</label>
+				<label class="field">
+					<span class="field__label">Walkthrough checks per sync</span>
+					<input type="number" name="taBatch" min="0" max="50">
+					<span class="field__hint">Games are checked a few at a time and rechecked every 30 days. Set to 0 if TA's Cloudflare keeps blocking checks.</span>
+				</label>
+				<label class="check"><input type="checkbox" name="skipApps"> Ignore apps and titles with no achievements</label>
+			</fieldset>
+
+			<fieldset class="panel">
+				<legend>Your data</legend>
+				<div class="field">
+					<span class="field__label">Import Google Sheet</span>
+					<span class="field__hint">File → Download → Comma-separated values. Columns: Done, Game, %, Walkthrough, TA URL, Notes. Your TA links and notes are never overwritten by automatic checks.</span>
+					<label class="btn btn--ghost btn--sm btn--file">Choose CSV<input type="file" accept=".csv,text/csv" data-import-csv></label>
+				</div>
+				<div class="field">
+					<span class="field__label">Backup</span>
+					<span class="field__hint">Everything lives in this browser. Export a backup before clearing site data or switching device.</span>
+					<div class="panel__actions">
+						<button type="button" class="btn btn--ghost btn--sm" data-action="export">Export backup</button>
+						<label class="btn btn--ghost btn--sm btn--file">Restore backup<input type="file" accept=".json,application/json" data-restore></label>
+					</div>
+				</div>
+				<div class="field">
+					<span class="field__label">Danger zone</span>
+					<div class="panel__actions">
+						<button type="button" class="btn btn--danger btn--sm" data-action="wipe">Delete all local data</button>
+					</div>
+				</div>
+			</fieldset>
+
+			<footer class="dialog__foot">
+				<button type="button" class="btn btn--ghost" data-action="close-settings">Cancel</button>
+				<button type="submit" class="btn btn--primary">Save settings</button>
+			</footer>
+		</form>
+	</dialog>
+
+	<div class="toasts" data-toasts></div>
+</body>
+</html>

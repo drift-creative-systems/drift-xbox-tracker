@@ -1,0 +1,14 @@
+{
+  "name": "drift-xbox-tracker-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker proxy for Drift: Xbox Tracker (OpenXBL + TrueAchievements checks)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

@@ -1,0 +1,41 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Windows
+ehthumbs.db
+$RECYCLE.BIN/
+
+# Editors
+.vscode/
+.idea/
+*.suo
+*.user
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+
+# Dependencies
+node_modules/
+
+# Cloudflare Worker — local secrets and wrangler state
+worker/.dev.vars
+worker/.wrangler/
+.wrangler/
+
+# Local environment / secrets
+.env
+.env.local
+.env*.local
+
+# Backups exported from the app (contain your library)
+drift-xbox-tracker-backup-*.json
+
+# Build output (if a bundler is ever added)
+dist/
+build/
