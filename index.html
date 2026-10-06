@@ -26,7 +26,7 @@
 			</svg>
 			<span class="brand__name"><span class="brand__drift">Drift</span><span class="brand__colon">:</span> Xbox Tracker</span>
 		</a>
-		<div class="topbar__actions">
+		<div class="topbar__actions" data-app-actions hidden>
 			<button type="button" class="btn btn--primary" data-action="sync">
 				<svg class="icon icon--sync" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2M18.5 3v3h-3M5.5 21v-3h3"/></svg>
 				<span data-sync-label>Sync now</span>
@@ -37,7 +37,23 @@
 		</div>
 	</header>
 
-	<main class="app">
+	<main class="login" data-login hidden>
+		<form class="login__card" data-login-form novalidate>
+			<h1 class="login__title">Log in</h1>
+			<p class="login__intro">Your library is saved to your account, not this browser, so it's the same on every device.</p>
+			<!-- Lets password managers save the login against a name. -->
+			<input type="text" name="username" value="Drift: Xbox Tracker" autocomplete="username" hidden>
+			<label class="field">
+				<span class="field__label">Password</span>
+				<input type="password" name="password" autocomplete="current-password" required>
+			</label>
+			<label class="check"><input type="checkbox" name="remember"> Keep me logged in on this device</label>
+			<p class="login__error" data-login-error role="alert" hidden></p>
+			<button type="submit" class="btn btn--primary">Log in</button>
+		</form>
+	</main>
+
+	<main class="app" data-app hidden>
 		<section class="hero" data-hero aria-label="Profile summary"></section>
 
 		<section class="library" id="library" tabindex="-1" aria-labelledby="library-title">
@@ -78,7 +94,7 @@
 	</main>
 
 	<footer class="footer">
-		<p><strong>Drift</strong> · Creative Systems. Your library is stored in this browser only.</p>
+		<p><strong>Drift</strong> · Creative Systems. Your library is stored on your own Cloudflare Worker.</p>
 	</footer>
 
 	<dialog class="dialog" data-settings aria-labelledby="settings-title">
@@ -91,19 +107,11 @@
 			</header>
 
 			<fieldset class="panel">
-				<legend>Connection</legend>
-				<label class="field">
-					<span class="field__label">Worker URL</span>
-					<input type="url" name="workerUrl" placeholder="https://drift-xbox-tracker-proxy.you.workers.dev" autocomplete="off" inputmode="url">
-					<span class="field__hint">The Cloudflare Worker in <code>worker/</code>. It holds your OpenXBL key so it never touches the browser.</span>
-				</label>
-				<label class="field">
-					<span class="field__label">Access token</span>
-					<input type="password" name="accessToken" autocomplete="off">
-					<span class="field__hint">The <code>ACCESS_TOKEN</code> secret you set on the Worker. Stored in this browser only.</span>
-				</label>
+				<legend>Account</legend>
+				<p class="field__hint">Your library is saved on your Cloudflare Worker, so it follows you to any device you log in on. Only your login session is kept in this browser.</p>
 				<div class="panel__actions">
-					<button type="button" class="btn btn--ghost btn--sm" data-action="test">Save &amp; test connection</button>
+					<button type="button" class="btn btn--ghost btn--sm" data-action="test">Test connection</button>
+					<button type="button" class="btn btn--ghost btn--sm" data-action="logout">Log out</button>
 				</div>
 			</fieldset>
 
@@ -111,7 +119,7 @@
 				<legend>Profile</legend>
 				<div class="field">
 					<span class="field__label">Avatar</span>
-					<span class="field__hint">Optional. Replaces your Xbox gamerpic in this browser. Saved as soon as you choose it, cropped to a square.</span>
+					<span class="field__hint">Optional. Replaces your Xbox gamerpic. Saved as soon as you choose it, cropped to a square.</span>
 					<div class="avatar-field">
 						<img class="avatar-field__preview" alt="Current avatar" width="56" height="56" data-avatar-preview hidden>
 						<div class="panel__actions">
@@ -146,7 +154,7 @@
 				</div>
 				<div class="field">
 					<span class="field__label">Backup</span>
-					<span class="field__hint">Everything lives in this browser. Export a backup before clearing site data or switching device.</span>
+					<span class="field__hint">Your library is saved to your account. Export a backup to keep your own copy.</span>
 					<div class="panel__actions">
 						<button type="button" class="btn btn--ghost btn--sm" data-action="export">Export backup</button>
 						<label class="btn btn--ghost btn--sm btn--file">Restore backup<input type="file" accept=".json,application/json" data-restore></label>
@@ -155,7 +163,7 @@
 				<div class="field">
 					<span class="field__label">Danger zone</span>
 					<div class="panel__actions">
-						<button type="button" class="btn btn--danger btn--sm" data-action="wipe">Delete all local data</button>
+						<button type="button" class="btn btn--danger btn--sm" data-action="wipe">Delete all data</button>
 					</div>
 				</div>
 			</fieldset>

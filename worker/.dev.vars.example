@@ -1,3 +1,4 @@
 # Copy to .dev.vars for `npm run dev` (wrangler dev). .dev.vars is git-ignored.
 OPENXBL_KEY=your-openxbl-personal-api-key
-ACCESS_TOKEN=a-long-random-string-you-also-paste-into-the-app
+LOGIN_PASSWORD=the-password-you-log-into-the-app-with
+SESSION_SECRET=a-long-random-string-used-to-sign-sessions

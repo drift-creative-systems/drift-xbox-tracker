@@ -7,6 +7,14 @@ compatibility_date = "2026-09-01"
 [vars]
 ALLOWED_ORIGINS = "https://xbox.driftcreativesystems.co.uk,http://localhost:8080"
 
+# Where the library is stored. Create the namespace once with:
+#   npx wrangler kv namespace create DXT_DATA
+# and paste the id it prints below. (`wrangler dev` uses a local copy.)
+[[kv_namespaces]]
+binding = "DXT_DATA"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
 # Secrets — never put these in this file:
 #   npx wrangler secret put OPENXBL_KEY
-#   npx wrangler secret put ACCESS_TOKEN
+#   npx wrangler secret put LOGIN_PASSWORD
+#   npx wrangler secret put SESSION_SECRET

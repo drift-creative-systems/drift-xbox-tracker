@@ -1,22 +1,23 @@
 /**
- * localStorage persistence. Everything lives under the `dxt_` prefix.
- * All reads/writes are wrapped — storage can be missing, full or blocked.
+ * Library persistence. The library is stored on the Worker (Cloudflare KV)
+ * and held in memory while the app is open. Writes change memory straight
+ * away and are saved to the Worker shortly after: debounced, one request at
+ * a time, and never before a successful load(), so an empty in-memory
+ * library can't overwrite the real one.
+ *
+ * The only localStorage this module touches is the pre-login library
+ * (LEGACY_KEYS), read once for migration and then cleared.
  */
 
+import * as api from './api.js';
 import { isDataImage } from './match.js';
 
-const KEYS = {
-	games: 'dxt_games',
-	settings: 'dxt_settings',
-	profile: 'dxt_profile',
-	avatar: 'dxt_avatar',
-	lastSync: 'dxt_last_sync',
-	lastError: 'dxt_last_error',
-};
+const SAVE_DELAY_MS = 800;
+
+// Where the library lived before login was added.
+const LEGACY_KEYS = ['dxt_games', 'dxt_settings', 'dxt_profile', 'dxt_avatar', 'dxt_last_sync', 'dxt_last_error'];
 
 const DEFAULT_SETTINGS = {
-	workerUrl: '',
-	accessToken: '',
 	taGamerId: '',
 	taBatch: 10,
 	skipApps: true,
@@ -24,26 +25,131 @@ const DEFAULT_SETTINGS = {
 
 export const BACKUP_VERSION = 1;
 
-function read(key, fallback) {
+let doc = emptyDoc();
+let rev = 0;
+let loaded = false;
+let dirty = false;
+let saving = null;
+let timer = null;
+let handlers = { onSaveError() {}, onConflict() {} };
+
+function emptyDoc() {
+	return { settings: { ...DEFAULT_SETTINGS }, profile: null, avatar: null, lastSync: null, lastError: null, games: [] };
+}
+
+const clone = (v) => (null === v || undefined === v ? null : structuredClone(v));
+const isoOrNull = (v) => ('string' === typeof v && v ? v : null);
+
+function cleanSettings(s) {
+	const src = s && 'object' === typeof s ? s : {};
+	const batch = parseInt(src.taBatch, 10);
+	return {
+		taGamerId: String(src.taGamerId ?? '').replace(/[^0-9]/g, ''),
+		taBatch: Number.isFinite(batch) ? Math.max(0, Math.min(50, batch)) : DEFAULT_SETTINGS.taBatch,
+		skipApps: 'boolean' === typeof src.skipApps ? src.skipApps : DEFAULT_SETTINGS.skipApps,
+	};
+}
+
+/**
+ * Cleans a library document from the Worker, a backup or the legacy store.
+ */
+function normalise(data) {
+	const d = data && 'object' === typeof data ? data : {};
+	return {
+		settings: cleanSettings(d.settings),
+		profile: d.profile && 'object' === typeof d.profile ? d.profile : null,
+		avatar: isDataImage(d.avatar) ? d.avatar : null,
+		lastSync: isoOrNull(d.lastSync),
+		lastError: 'string' === typeof d.lastError && d.lastError ? d.lastError : null,
+		games: Array.isArray(d.games) ? d.games.filter((g) => g && g.name).map(makeGame) : [],
+	};
+}
+
+/* ---------- Loading & saving ---------- */
+
+/**
+ * @param {{ onSaveError?: (err: Error) => void, onConflict?: () => void }} h
+ */
+export function setHandlers(h) {
+	handlers = { ...handlers, ...h };
+}
+
+export const isLoaded = () => loaded;
+export const isEmpty = () => 0 === doc.games.length;
+export const hasUnsavedChanges = () => dirty || Boolean(saving);
+
+/**
+ * Replaces memory with the library on the Worker. Unsaved changes are dropped.
+ */
+export async function load() {
+	const r = await api.loadData();
+	clearTimeout(timer);
+	doc = normalise(r.data);
+	rev = r.rev;
+	dirty = false;
+	loaded = true;
+}
+
+/**
+ * Forgets the library (on log out).
+ */
+export function reset() {
+	clearTimeout(timer);
+	doc = emptyDoc();
+	rev = 0;
+	dirty = false;
+	loaded = false;
+}
+
+function changed() {
+	if (!loaded) {
+		throw new Error('Your library has not loaded yet. Reload and try again.');
+	}
+	dirty = true;
+	clearTimeout(timer);
+	timer = setTimeout(() => {
+		flush().catch(() => {
+			// Reported through handlers.
+		});
+	}, SAVE_DELAY_MS);
+}
+
+/**
+ * Saves now. Waits for any save already in flight, then sends the latest copy.
+ * A failed save stays dirty and is retried on the next change or flush.
+ */
+export async function flush() {
+	clearTimeout(timer);
+	while (saving) {
+		await saving.catch(() => {});
+	}
+	if (!loaded || !dirty) {
+		return;
+	}
+
+	dirty = false;
+	saving = api.saveData(rev, doc);
 	try {
-		const raw = localStorage.getItem(key);
-		return null === raw ? fallback : JSON.parse(raw);
-	} catch {
-		return fallback;
+		rev = (await saving).rev;
+	} catch (err) {
+		if (err.conflict) {
+			handlers.onConflict();
+		} else {
+			dirty = true;
+			handlers.onSaveError(err);
+		}
+		throw err;
+	} finally {
+		saving = null;
+	}
+
+	// Changes made while the request was in flight.
+	if (dirty) {
+		changed();
 	}
 }
 
-function write(key, value) {
-	try {
-		if (null === value || undefined === value) {
-			localStorage.removeItem(key);
-		} else {
-			localStorage.setItem(key, JSON.stringify(value));
-		}
-	} catch {
-		throw new Error('Could not save to browser storage. It may be full or blocked.');
-	}
-}
+/* ---------- Games ---------- */
 
 export function newId() {
 	if (globalThis.crypto?.randomUUID) {
@@ -52,30 +158,30 @@ export function newId() {
 	return `g_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/* ---------- Games ---------- */
-
+/**
+ * Returns a copy — callers can mutate it and pass it to saveGames().
+ */
 export function getGames() {
-	const games = read(KEYS.games, []);
-	return Array.isArray(games) ? games : [];
+	return clone(doc.games);
 }
 
 export function saveGames(games) {
-	write(KEYS.games, games);
+	doc.games = clone(Array.isArray(games) ? games : []);
+	changed();
 }
 
 export function getGame(id) {
-	return getGames().find((g) => g.id === id) || null;
+	return clone(doc.games.find((g) => g.id === id) || null);
 }
 
 export function updateGame(id, patch) {
-	const games = getGames();
-	const i = games.findIndex((g) => g.id === id);
+	const i = doc.games.findIndex((g) => g.id === id);
 	if (-1 === i) {
 		return null;
 	}
-	games[i] = { ...games[i], ...patch, updated: new Date().toISOString() };
-	saveGames(games);
-	return games[i];
+	doc.games[i] = { ...doc.games[i], ...clone(patch), updated: new Date().toISOString() };
+	changed();
+	return clone(doc.games[i]);
 }
 
 /**
@@ -110,20 +216,33 @@ export function makeGame(data) {
 
 /* ---------- Settings, profile, sync status ---------- */
 
+/**
+ * Sets a top-level value, skipping the save when nothing changed.
+ */
+function setValue(key, value) {
+	if (doc[key] === value) {
+		return;
+	}
+	doc[key] = value;
+	changed();
+}
+
 export function getSettings() {
-	return { ...DEFAULT_SETTINGS, ...read(KEYS.settings, {}) };
+	return { ...doc.settings };
 }
 
 export function saveSettings(settings) {
-	write(KEYS.settings, { ...getSettings(), ...settings });
+	doc.settings = cleanSettings({ ...doc.settings, ...settings });
+	changed();
 }
 
 export function getProfile() {
-	return read(KEYS.profile, null);
+	return clone(doc.profile);
 }
 
 export function saveProfile(profile) {
-	write(KEYS.profile, profile);
+	doc.profile = profile && 'object' === typeof profile ? clone(profile) : null;
+	changed();
 }
 
 /**
@@ -131,42 +250,37 @@ export function saveProfile(profile) {
  * sync never replaces it.
  */
 export function getAvatar() {
-	const avatar = read(KEYS.avatar, null);
-	return isDataImage(avatar) ? avatar : null;
+	return doc.avatar;
 }
 
 export function saveAvatar(dataUrl) {
-	write(KEYS.avatar, isDataImage(dataUrl) ? dataUrl : null);
+	setValue('avatar', isDataImage(dataUrl) ? dataUrl : null);
 }
 
 export function getLastSync() {
-	return read(KEYS.lastSync, null);
+	return doc.lastSync;
 }
 
 export function setLastSync(iso) {
-	write(KEYS.lastSync, iso);
+	setValue('lastSync', isoOrNull(iso));
 }
 
 export function getLastError() {
-	return read(KEYS.lastError, null);
+	return doc.lastError;
 }
 
 export function setLastError(message) {
-	write(KEYS.lastError, message || null);
+	setValue('lastError', message || null);
 }
 
 /* ---------- Backup / wipe ---------- */
 
-/**
- * Backup excludes the access token so the file is safe to keep anywhere.
- */
 export function exportBackup() {
-	const { accessToken, ...settings } = getSettings();
 	return {
 		app: 'drift-xbox-tracker',
 		version: BACKUP_VERSION,
 		exported: new Date().toISOString(),
-		settings,
+		settings: getSettings(),
 		profile: getProfile(),
 		avatar: getAvatar(),
 		lastSync: getLastSync(),
@@ -174,28 +288,68 @@ export function exportBackup() {
 	};
 }
 
+/**
+ * Replaces the library with a backup. Old backups may carry workerUrl or
+ * accessToken in settings; cleanSettings() drops them.
+ */
 export function restoreBackup(data) {
 	if (!data || 'drift-xbox-tracker' !== data.app || !Array.isArray(data.games)) {
 		throw new Error('That file is not a Drift: Xbox Tracker backup.');
 	}
 
-	const games = data.games.filter((g) => g && g.name).map(makeGame);
-	saveGames(games);
-	if (data.settings && 'object' === typeof data.settings) {
-		const { accessToken, ...settings } = data.settings;
-		saveSettings(settings);
-	}
-	saveProfile(data.profile || null);
-	// Older backups have no avatar key — leave the current one alone.
-	if ('avatar' in data) {
-		saveAvatar(data.avatar);
-	}
-	setLastSync(data.lastSync || null);
-	return games.length;
+	const next = normalise({
+		...data,
+		settings: { ...doc.settings, ...(data.settings && 'object' === typeof data.settings ? data.settings : {}) },
+		// Older backups have no avatar key — leave the current one alone.
+		avatar: 'avatar' in data ? data.avatar : doc.avatar,
+		lastError: null,
+	});
+	doc = next;
+	changed();
+	return next.games.length;
 }
 
-export function wipeAll() {
-	Object.values(KEYS).forEach((k) => {
+/**
+ * Empties the library on the Worker.
+ */
+export async function wipeAll() {
+	doc = emptyDoc();
+	changed();
+	await flush();
+}
+
+/* ---------- Pre-login migration ---------- */
+
+function readLegacy(key) {
+	try {
+		return JSON.parse(localStorage.getItem(key) || 'null');
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * The library this browser held before login existed, shaped as a backup,
+ * or null if there isn't one.
+ */
+export function readLegacyBackup() {
+	const games = readLegacy('dxt_games');
+	if (!Array.isArray(games) || !games.length) {
+		return null;
+	}
+	return {
+		app: 'drift-xbox-tracker',
+		version: BACKUP_VERSION,
+		settings: readLegacy('dxt_settings'),
+		profile: readLegacy('dxt_profile'),
+		avatar: readLegacy('dxt_avatar'),
+		lastSync: readLegacy('dxt_last_sync'),
+		games,
+	};
+}
+
+export function clearLegacy() {
+	LEGACY_KEYS.forEach((k) => {
 		try {
 			localStorage.removeItem(k);
 		} catch {

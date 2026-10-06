@@ -298,6 +298,12 @@ code {
 
 /* ---------- Layout ---------- */
 
+/* .topbar__actions sets its own display, which would beat the hidden attribute. */
+.topbar__actions[hidden],
+.login[hidden] {
+	display: none;
+}
+
 .app {
 	flex: 1;
 	width: 100%;
@@ -316,6 +322,43 @@ code {
 
 .footer p {
 	margin: 0;
+}
+
+/* ---------- Login ---------- */
+
+.login {
+	flex: 1;
+	display: grid;
+	place-items: center;
+	padding: clamp(2rem, 8vw, 5rem) var(--gutter);
+}
+
+.login__card {
+	display: grid;
+	gap: 1rem;
+	width: min(24rem, 100%);
+	padding: clamp(1.25rem, 5vw, 2rem);
+	border: 1px solid var(--line);
+	border-radius: var(--r-panel);
+	background: var(--surface);
+}
+
+.login__title {
+	margin: 0;
+	font: 600 1.5rem/1.3 var(--font-head);
+}
+
+.login__intro {
+	margin: 0;
+	font-size: 0.9375rem;
+	line-height: 1.5;
+	color: var(--text-soft);
+}
+
+.login__error {
+	margin: 0;
+	font-size: 0.875rem;
+	color: var(--danger);
 }
 
 /* ---------- Hero ---------- */

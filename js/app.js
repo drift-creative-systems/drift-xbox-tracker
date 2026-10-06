@@ -1,12 +1,13 @@
 /**
  * Drift: Xbox Tracker — app controller.
- * Renders the hero + library, wires filters/sort/search, the inline
- * editor, the settings dialog, and sync scheduling.
+ * Handles login, renders the hero + library, wires filters/sort/search,
+ * the inline editor, the settings dialog, and sync scheduling.
  */
 
 import * as store from './store.js';
 import * as sync from './sync.js';
 import * as api from './api.js';
+import * as auth from './auth.js';
 import { importCsv } from './importer.js';
 import { taSearchUrl, withGamerId, safeUrl, httpsImage, safeImageSrc } from './match.js';
 
@@ -22,6 +23,11 @@ const AVATAR_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const state = { filter: 'all', q: '', sort: 'played', openId: null };
 
 const el = {
+	login: $('[data-login]'),
+	loginForm: $('[data-login-form]'),
+	loginError: $('[data-login-error]'),
+	app: $('[data-app]'),
+	appActions: $('[data-app-actions]'),
 	hero: $('[data-hero]'),
 	list: $('[data-list]'),
 	count: $('[data-count]'),
@@ -145,11 +151,6 @@ function resizeAvatar(file) {
 		img.src = src;
 	});
 }
-
-const isConfigured = () => {
-	const s = store.getSettings();
-	return Boolean(s.workerUrl && s.accessToken);
-};
 
 /* ---------- Filters & sorting ---------- */
 
@@ -282,14 +283,11 @@ function rowHtml(g) {
 }
 
 function emptyHtml(totalGames) {
-	if (!totalGames && !isConfigured()) {
+	if (!totalGames) {
 		return `
 			<h2>Connect your Xbox account</h2>
-			<p>Add your Worker URL and access token in Settings to pull your games, or import your Google Sheet to start from your existing list.</p>
-			<button type="button" class="btn btn--primary" data-action="settings">Open settings</button>`;
-	}
-	if (!totalGames) {
-		return '<h2>No games yet</h2><p>Run a sync to pull every game on your Xbox account.</p>';
+			<p>Sync to pull every game on your Xbox account, or import your Google Sheet from Settings to start from your existing list.</p>
+			<button type="button" class="btn btn--primary" data-action="sync">Sync now</button>`;
 	}
 	return '<p>No games match that search or filter.</p>';
 }
@@ -359,7 +357,7 @@ function setSyncing(on, label) {
 }
 
 async function doSync({ quiet = false } = {}) {
-	if (sync.isRunning()) {
+	if (sync.isRunning() || !store.isLoaded()) {
 		return;
 	}
 	setSyncing(true, 'Starting sync…');
@@ -384,7 +382,7 @@ async function doSync({ quiet = false } = {}) {
 }
 
 function maybeAutoSync() {
-	if (isConfigured() && sync.isStale() && 'visible' === document.visibilityState) {
+	if (store.isLoaded() && auth.isLoggedIn() && sync.isStale() && 'visible' === document.visibilityState) {
 		doSync({ quiet: true });
 	}
 }
@@ -467,8 +465,6 @@ async function recheck(form, id) {
 function openSettings() {
 	const s = store.getSettings();
 	const f = el.settingsForm.elements;
-	f.workerUrl.value = s.workerUrl;
-	f.accessToken.value = s.accessToken;
 	f.taGamerId.value = s.taGamerId;
 	f.taBatch.value = s.taBatch;
 	f.skipApps.checked = Boolean(s.skipApps);
@@ -525,13 +521,7 @@ function removeAvatar() {
 
 function readSettingsForm() {
 	const f = el.settingsForm.elements;
-	const workerUrl = String(f.workerUrl.value || '').trim().replace(/\/+$/, '');
-	if (workerUrl && !safeUrl(workerUrl)) {
-		throw new Error('Worker URL must be a full link, e.g. https://drift-xbox-tracker-proxy.you.workers.dev');
-	}
 	return {
-		workerUrl,
-		accessToken: String(f.accessToken.value || '').trim(),
 		taGamerId: String(f.taGamerId.value || '').replace(/[^0-9]/g, ''),
 		taBatch: Math.max(0, Math.min(50, parseInt(f.taBatch.value, 10) || 0)),
 		skipApps: f.skipApps.checked,
@@ -549,12 +539,15 @@ function saveSettingsForm() {
 }
 
 async function testConnection() {
-	if (!saveSettingsForm()) {
-		return;
-	}
 	try {
 		const r = await api.health();
-		toast(r.hasKey ? 'Connected. The Worker has your OpenXBL key.' : 'Connected, but OPENXBL_KEY is not set on the Worker.', r.hasKey ? 'success' : 'error');
+		if (!r.hasKey) {
+			toast('Connected, but OPENXBL_KEY is not set on the Worker.', 'error');
+		} else if (!r.hasStore) {
+			toast('Connected, but the DXT_DATA KV namespace is not bound to the Worker.', 'error');
+		} else {
+			toast('Connected. The Worker has your OpenXBL key and library store.', 'success');
+		}
 	} catch (err) {
 		toast(err.message, 'error');
 	}
@@ -584,7 +577,7 @@ async function handleRestore(input) {
 	try {
 		const data = JSON.parse(await readFile(file));
 		// eslint-disable-next-line no-alert
-		if (!window.confirm('Replace every game in this browser with the backup? Your access token is kept.')) {
+		if (!window.confirm('Replace every game in your library with the backup?')) {
 			return;
 		}
 		const n = store.restoreBackup(data);
@@ -601,16 +594,162 @@ function handleExport() {
 	download(`drift-xbox-tracker-backup-${stamp}.json`, JSON.stringify(store.exportBackup(), null, 2), 'application/json');
 }
 
-function handleWipe() {
+async function handleWipe() {
 	// eslint-disable-next-line no-alert
-	if (!window.confirm('Delete every game, note and setting stored in this browser? This cannot be undone.')) {
+	if (!window.confirm('Delete every game, note and setting from your account? This cannot be undone, so export a backup first if you might want it back.')) {
 		return;
 	}
-	store.wipeAll();
 	state.openId = null;
 	el.settings.close();
+	try {
+		await store.wipeAll();
+		toast('All data deleted.', 'info');
+	} catch (err) {
+		toast(err.message, 'error');
+	}
 	renderAll();
-	toast('All local data deleted.', 'info');
+}
+
+/* ---------- Login ---------- */
+
+function showView(view) {
+	const inApp = 'app' === view;
+	el.login.hidden = inApp;
+	el.app.hidden = !inApp;
+	el.appActions.hidden = !inApp;
+}
+
+function setLoginError(message) {
+	el.loginError.textContent = message;
+	el.loginError.hidden = !message;
+}
+
+function showLogin(message = '') {
+	if (el.settings.open) {
+		el.settings.close();
+	}
+	showView('login');
+	setLoginError(message);
+	el.loginForm.elements.password.value = '';
+	el.loginForm.elements.password.focus();
+}
+
+async function handleLogin(form) {
+	const password = form.elements.password.value;
+	const remember = form.elements.remember.checked;
+	if (!password) {
+		setLoginError('Enter your password.');
+		form.elements.password.focus();
+		return;
+	}
+
+	const submit = $('[type="submit"]', form);
+	submit.disabled = true;
+	setLoginError('');
+	try {
+		auth.saveSession(await api.login(password, remember), remember);
+		form.elements.password.value = '';
+		await startApp();
+	} catch (err) {
+		setLoginError(err.message);
+		form.elements.password.select();
+	} finally {
+		submit.disabled = false;
+	}
+}
+
+async function handleLogout() {
+	if (store.hasUnsavedChanges()) {
+		try {
+			await store.flush();
+		} catch {
+			// eslint-disable-next-line no-alert
+			if (!window.confirm('Your latest changes have not saved yet. Log out anyway and lose them?')) {
+				return;
+			}
+		}
+	}
+	auth.clearSession();
+	store.reset();
+	window.location.reload();
+}
+
+/**
+ * Pre-login versions kept the library in localStorage. Offer to move it to
+ * the account, or clear it if the account already has a library.
+ */
+async function offerLegacyImport() {
+	const legacy = store.readLegacyBackup();
+	if (!legacy) {
+		return;
+	}
+
+	if (!store.isEmpty()) {
+		// eslint-disable-next-line no-alert
+		if (window.confirm('This browser still has an old copy of your library from before login. Your account already has a library, so remove the old copy from this browser?')) {
+			store.clearLegacy();
+		}
+		return;
+	}
+
+	// eslint-disable-next-line no-alert
+	if (!window.confirm(`Found ${legacy.games.length} games saved in this browser from before login. Move them to your account? They'll be removed from this browser afterwards.`)) {
+		return;
+	}
+	try {
+		const n = store.restoreBackup(legacy);
+		await store.flush();
+		store.clearLegacy();
+		toast(`Moved ${n} games to your account.`, 'success');
+	} catch (err) {
+		toast(err.message, 'error');
+	}
+}
+
+function renderLoadError(message) {
+	el.hero.innerHTML = `
+		<div>
+			<p class="hero__error">Could not load your library: ${esc(message)}</p>
+			<button type="button" class="btn btn--ghost btn--sm" data-action="reload-library">Try again</button>
+		</div>`;
+}
+
+async function startApp() {
+	showView('app');
+
+	// Session expired mid-edit: save what's in memory rather than loading over it.
+	if (store.isLoaded() && store.hasUnsavedChanges()) {
+		try {
+			await store.flush();
+			toast('Logged back in. Your changes are saved.', 'success');
+		} catch {
+			// Reported through the store handlers.
+		}
+		renderAll();
+		maybeAutoSync();
+		return;
+	}
+
+	el.hero.innerHTML = '<p class="hero__synced">Loading your library…</p>';
+	el.list.innerHTML = '';
+	el.empty.hidden = true;
+	el.syncBtn.disabled = true;
+
+	try {
+		await store.load();
+	} catch (err) {
+		// A 401 has already sent us back to the login screen.
+		if (auth.isLoggedIn()) {
+			renderLoadError(err.message);
+		}
+		return;
+	} finally {
+		el.syncBtn.disabled = sync.isRunning();
+	}
+
+	await offerLegacyImport();
+	renderAll();
+	maybeAutoSync();
 }
 
 /* ---------- Events ---------- */
@@ -645,6 +784,12 @@ function bind() {
 				break;
 			case 'remove-avatar':
 				removeAvatar();
+				break;
+			case 'logout':
+				handleLogout();
+				break;
+			case 'reload-library':
+				startApp();
 				break;
 			case 'edit':
 				if (row) {
@@ -693,6 +838,11 @@ function bind() {
 		renderList();
 	});
 
+	el.loginForm.addEventListener('submit', (e) => {
+		e.preventDefault();
+		handleLogin(el.loginForm);
+	});
+
 	el.settingsForm.addEventListener('submit', (e) => {
 		e.preventDefault();
 		if (saveSettingsForm()) {
@@ -708,11 +858,41 @@ function bind() {
 	$('[data-avatar-upload]').addEventListener('change', (e) => handleAvatar(e.target));
 
 	document.addEventListener('visibilitychange', maybeAutoSync);
+
+	window.addEventListener('dxt:logged-out', () => showLogin('Your session has expired. Log in again.'));
+
+	// Saves are debounced — warn before closing the tab with one pending.
+	window.addEventListener('beforeunload', (e) => {
+		if (store.hasUnsavedChanges()) {
+			e.preventDefault();
+			e.returnValue = '';
+		}
+	});
+
+	store.setHandlers({
+		onSaveError: (err) => {
+			if (auth.isLoggedIn()) {
+				toast(`Could not save your changes: ${err.message}`, 'error');
+			}
+		},
+		onConflict: async () => {
+			toast('Your library changed on another device, so the latest copy has been loaded. Your last change here was not saved.', 'error');
+			try {
+				await store.load();
+			} catch (err) {
+				toast(err.message, 'error');
+			}
+			renderAll();
+		},
+	});
 }
 
 /* ---------- Boot ---------- */
 
 bind();
-renderAll();
-maybeAutoSync();
+if (auth.isLoggedIn()) {
+	startApp();
+} else {
+	showLogin();
+}
 setInterval(maybeAutoSync, AUTO_SYNC_CHECK_MS);

@@ -15,23 +15,26 @@ Part of the **Drift** ecosystem · Creative Systems.
 - **Filter and sort.** Played this month, in progress, not started, completed, has walkthrough, on my list, hidden. Sort by last played, name, completion or gamerscore left
 - **Inline editing.** Set a TA link, add notes, and mark games completed, on your list or hidden
 - **Auto-sync.** Syncs when you open the app if the last sync is more than an hour old
-- **Private by design.** Your library lives in your browser. The API key lives on your own Cloudflare Worker
-- **Backup and restore.** Export your whole library as JSON and restore it on another device
+- **Log in anywhere.** Password login. Your library is stored on your own Cloudflare Worker (KV), not in the browser, so it's the same on every device
+- **Private by design.** The API key and your library live on your own Cloudflare Worker. The browser only keeps your login session
+- **Backup and restore.** Export your whole library as JSON and restore it at any time
 
 ---
 
 ## How It Works
 
 ```
-Browser (static app, localStorage)
-   │  Authorization: Bearer <ACCESS_TOKEN>
+Browser (static app, library held in memory)
+   │  POST /api/login (password) → session token
+   │  Authorization: Bearer <session token>
    ▼
-Cloudflare Worker (worker/)  ── holds OPENXBL_KEY
+Cloudflare Worker (worker/)  ── holds OPENXBL_KEY, LOGIN_PASSWORD, SESSION_SECRET
+   ├──► KV namespace DXT_DATA   (your library: GET/PUT /api/data)
    ├──► xbl.io/api/v2/achievements, /account
    └──► trueachievements.com/game/<slug>/walkthrough
 ```
 
-The app can't call OpenXBL or TrueAchievements directly. Browsers block those cross-origin requests, and the API key would be exposed. The Worker is a small proxy that only answers your origin and your token.
+The app can't call OpenXBL or TrueAchievements directly. Browsers block those cross-origin requests, and the API key would be exposed. The Worker is a small proxy and store that only answers your origin and a valid login session.
 
 ---
 
@@ -41,7 +44,20 @@ The app can't call OpenXBL or TrueAchievements directly. Browsers block those cr
 
 Sign in at [xbl.io](https://xbl.io) with your Xbox account and copy your personal API key. The free tier is plenty, because one sync uses two calls.
 
-# any long random string; you'll paste it into the app
+### 2. Deploy the Worker
+
+```bash
+cd worker
+npm install
+npx wrangler login
+
+# Create the KV namespace that stores your library,
+# then paste the id it prints into worker/wrangler.toml
+npx wrangler kv namespace create DXT_DATA
+
+npx wrangler secret put OPENXBL_KEY      # your OpenXBL key
+npx wrangler secret put LOGIN_PASSWORD   # the password you'll log into the app with
+npx wrangler secret put SESSION_SECRET   # any long random string; signs login sessions
 ```
 
 Edit `ALLOWED_ORIGINS` in `worker/wrangler.toml` to include the URL you'll host the app on (comma separated), then run:
@@ -50,7 +66,9 @@ Edit `ALLOWED_ORIGINS` in `worker/wrangler.toml` to include the URL you'll host 
 npm run deploy
 ```
 
-Note the `*.workers.dev` URL it prints.
+Note the `*.workers.dev` URL it prints and set it as `PRODUCTION_WORKER_URL` in `js/config.js`.
+
+Changing `SESSION_SECRET` logs out every device. Failed logins are limited to 10 per IP every 15 minutes.
 
 ### 3. Host the app
 
@@ -64,11 +82,13 @@ python -m http.server 8080      # or: npx serve .
 
 ES modules need a server context. Opening `index.html` as a `file://` URL won't work.
 
-### 4. Connect
+On `localhost` the app talks to `http://localhost:8787` (`npm run dev` in `worker/`, with `LOGIN_PASSWORD` and `SESSION_SECRET` in `worker/.dev.vars`).
 
-1. Open the app, then go to **Settings**.
-2. Paste the Worker URL and access token, then click **Save & test connection**.
-3. Optional: add your TrueAchievements gamer ID so achievement links show your progress.
+### 4. Log in and connect
+
+1. Open the app and log in with your `LOGIN_PASSWORD`. Tick **Keep me logged in on this device** to stay logged in for 30 days; otherwise the session ends when you close the tab (or after 12 hours).
+2. If this browser has a library from before login was added, the app offers to move it to your account and then removes it from the browser.
+3. Optional: in **Settings**, click **Test connection** and add your TrueAchievements gamer ID so achievement links show your progress.
 4. **Import your Google Sheet first** (File → Download → Comma-separated values) so your TA links and notes are in place before the first sync.
 5. Click **Sync now**.
 
@@ -105,7 +125,7 @@ Expected columns, in order: **Done, Game, %, Walkthrough, TA URL, Notes**.
 | | |
 |---|---|
 | App | Vanilla JavaScript (ES modules), HTML5, CSS3. No framework, no build step |
-| Storage | Browser `localStorage` (`dxt_` prefix) |
+| Storage | Cloudflare KV via the Worker. The browser keeps only the login session (`dxt_session`) |
 | Proxy | Cloudflare Workers + Wrangler |
 | Fonts | Poppins, Inter (Google Fonts) |
 | Data | OpenXBL, TrueAchievements |
@@ -121,7 +141,9 @@ xbox-tracker/
 │   └── styles.css          — Drift brand tokens, layout, components
 ├── js/
 │   ├── app.js              — Rendering, events, editor, settings, auto-sync
-│   ├── store.js            — localStorage persistence, backup/restore
+│   ├── store.js            — In-memory library, debounced saves to the Worker, backup/restore
+│   ├── auth.js             — Login session token
+│   ├── config.js           — Worker URL (local and production)
 │   ├── match.js            — Name normalisation, TA URLs, title matching
 │   ├── api.js              — Worker client
 │   ├── sync.js             — Xbox sync + TA walkthrough batch
@@ -130,7 +152,7 @@ xbox-tracker/
 │   ├── favicon.svg         — Drift submark
 │   └── apple-touch-icon.png
 ├── worker/
-│   ├── src/index.js        — Cloudflare Worker proxy
+│   ├── src/index.js        — Cloudflare Worker: login, library store, proxy
 │   ├── wrangler.toml
 │   ├── package.json
 │   └── .dev.vars.example
@@ -145,13 +167,11 @@ xbox-tracker/
 
 ## Data & Privacy
 
-- Your library, notes and settings are stored only in this browser's `localStorage`
-- The access token is stored in the browser and left out of backup files
-- The OpenXBL key never reaches the browser
-- The Worker stores nothing. It only relays requests from origins you've allowed
-- **Settings → Delete all local data** wipes everything from the browser
-
-Clearing your browser's site data deletes your library, so export a backup first.
+- Your library, notes and settings are stored in a KV namespace on your own Cloudflare account, behind your login
+- The browser keeps only the login session token: `sessionStorage` by default, `localStorage` if you tick **Keep me logged in**. **Settings → Log out** removes it
+- The password, session secret and OpenXBL key are Worker secrets and never reach the browser
+- Saves carry a revision number, so a stale tab or second device can't overwrite newer changes; it reloads the latest copy instead
+- **Settings → Delete all data** empties the library on the Worker
 
 ---
 

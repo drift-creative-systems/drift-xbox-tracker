@@ -9,9 +9,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/). This pr
 ## [Unreleased]
 
 ### Added
+- [worker/src/index.js] Password login (`POST /api/login`) issuing HMAC-signed session tokens: 12 hours by default, 30 days with "Keep me logged in". Failed logins are limited to 10 per IP per 15 minutes
+- [worker/src/index.js] [worker/wrangler.toml] Library storage in Cloudflare KV (`DXT_DATA`) via `GET`/`PUT /api/data`, with a revision check that returns 409 instead of overwriting changes made on another device. Bodies over 5 MB get 413
+- [index.html] [css/styles.css] [js/app.js] Login screen, "Log out" in Settings → Account, a loading state, a retry if the library fails to load, and a warning before closing the tab with an unsaved change
+- [js/auth.js] Session token handling (`dxt_session` in `sessionStorage`, or `localStorage` when remembered)
+- [js/config.js] Worker URL config, which uses `localhost:8787` automatically on localhost
+- [js/app.js] [js/store.js] One-time migration on first login: a library left in `localStorage` by earlier versions is moved to the account and then cleared from the browser
 - [index.html] [js/app.js] Avatar upload in Settings → Profile. The image is centre-cropped and resized in the browser to 256×256 WebP (JPEG fallback), and replaces the Xbox gamerpic in the hero. There's also a Remove button
 - [js/store.js] `dxt_avatar` storage key, included in backup export/restore (older backups without it leave the current avatar alone)
 - [js/match.js] `safeImageSrc()`, which allows raster base64 data URLs (PNG/JPEG/WebP only, no SVG) alongside https images
+
+### Changed
+- [js/store.js] The library is no longer stored in the browser. It loads from the Worker after login, is held in memory, and saves back after 800ms (debounced, one request at a time, never before a successful load)
+- [js/api.js] Sends the session token instead of the shared access token. A 401 logs out and returns to the login screen without losing in-memory edits
+- [index.html] [js/app.js] Settings "Connection" panel (Worker URL and access token) replaced by an "Account" panel. "Delete all local data" is now "Delete all data" and empties the library on the Worker
+- [README.md] Setup covers the KV namespace, the new secrets and `js/config.js`. Also restored the missing "Deploy the Worker" heading and commands
+
+### Removed
+- [worker/] `ACCESS_TOKEN` secret, replaced by `LOGIN_PASSWORD` and `SESSION_SECRET`
 
 ### Fixed
 - [worker/src/index.js] [js/match.js] Microsoft image URLs returned as `http://` by OpenXBL are upgraded to `https://`, which removes the mixed-content warnings for game covers and the gamerpic
