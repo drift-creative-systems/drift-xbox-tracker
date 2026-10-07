@@ -12,7 +12,7 @@ ALLOWED_ORIGINS = "https://xbox.driftcreativesystems.co.uk,http://localhost:8080
 # and paste the id it prints below. (`wrangler dev` uses a local copy.)
 [[kv_namespaces]]
 binding = "DXT_DATA"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "d87404c8327e415b8310379e6539accf"
 
 # Secrets — never put these in this file:
 #   npx wrangler secret put OPENXBL_KEY
